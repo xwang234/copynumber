@@ -95,19 +95,19 @@ maf.fn=paste0(tumor,".maf.txt")
 
 
 #sigma.p=0.0
-sigma.p=0.05
+sigma.p=0.0
 #max.sigma.h=0.05
-max.sigma.h=0.5
-min.ploidy=0.1
-max.ploidy=5
+max.sigma.h=0.015
+min.ploidy=0.95
+max.ploidy=10
 primary.disease="EAC"
 platform="Illumina_WES"
 
 sample.name=tumor
 results.dir=paste0("./",tumor)
 max.as.seg.count=5000
-max.non.clonal=10
-max.neg.genome=10
+max.non.clonal=0.05
+max.neg.genome=0.005
 copy_num_type="total"
 output.fn.base=tumor
 verbose=TRUE

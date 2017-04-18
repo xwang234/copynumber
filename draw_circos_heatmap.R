@@ -187,7 +187,7 @@ findcytoband=function(chr,start,end)
   return(res)
 }
 
-getwholetable1=function(alllessionsfile,opt="AMP",opt1="peak",opt2="binary")
+getwholetable1=function(alllessionsfile,opt="AMP",opt1="peak",opt2="binary",qcutoff=1,delcutoff=-0.9)
 {
   
   alllessiontable=read.table(alllessionsfile,header=T,sep="\t",stringsAsFactors=F)
@@ -197,6 +197,20 @@ getwholetable1=function(alllessionsfile,opt="AMP",opt1="peak",opt2="binary")
   idx=which(colnames(alllessiontable)=="Amplitude.Threshold")
   idx=idx+1 # tumor samples start
   idxkeep=which(rowSums(abs(alllessiontable[1:(nrow(alllessiontable)/2),idx:ncol(alllessiontable)]),na.rm = T)>1)
+  alllessionrealdata=alllessiontable[(nrow(alllessiontable)/2+1):nrow(alllessiontable),]
+  idxdel=which(grepl("Amplification",alllessionrealdata$Unique.Name)==F)
+  for (i in idxdel)
+  {
+    for (j in idx:ncol(alllessionrealdata))
+    {
+      if (alllessionrealdata[i,j]<delcutoff)
+      {
+        alllessionrealdata[i,j]=alllessiontable[i,j]=2
+      }
+        
+    }
+  }
+  
   if (opt2=="binary")
   {
     alllessiontable=alllessiontable[1:(nrow(alllessiontable)/2),]
@@ -214,7 +228,7 @@ getwholetable1=function(alllessionsfile,opt="AMP",opt1="peak",opt2="binary")
   {
     alllessiontable=alllessiontable[!idx1,]
   }
-
+  alllessiontable=alllessiontable[alllessiontable$Residual.q.values.after.removing.segments.shared.with.higher.peaks<qcutoff,]
   res=data.frame(matrix(NA,nrow=nrow(alllessiontable),ncol=5))
   colnames(res)=c("cytoband","chr","start","end","qvalue")
   res$chr=as.character(res$chr)
@@ -847,15 +861,34 @@ RCircos.Heatmap.Plot2(segdata1, track.num=1)
 RCircos.Heatmap.Plot2(segdata2, track.num=2)
 RCircos.Heatmap.Plot2(segdata3, track.num=3)
 
-#2dataset
+#2dataset used in paper
 gisticdir="/fh/scratch/delete30/dai_j/henan/gistic2data/dulak_henan_ploid2degree3force0_cnv_rx1_conf0.95_armpeel0_brlen0.98_broad1"
+gisticdir="/fh/scratch/delete30/dai_j/henan/gistic2data/dulak_henan_ploid2degree3force0_cnv_rx1_conf0.95_armpeel1_brlen0.98_broad1"
 alllessionsfile=paste0(gisticdir,"/all_lesions.conf_95.txt")
 
-ampsegdata=getwholetable1(alllessionsfile,opt="AMP")
-delsegdata=getwholetable1(alllessionsfile,opt="DEL")
+ampsegdata=getwholetable1(alllessionsfile,opt="AMP",qcutoff = 0.01)
+delsegdata=getwholetable1(alllessionsfile,opt="DEL",qcutoff = 0.01)
 colnames(ampsegdata)[6:21]=paste0("US-EA",1:16)
 colnames(ampsegdata)[22:ncol(ampsegdata)]=paste0("CH-EA",1:10)
 colnames(delsegdata)=colnames(ampsegdata)
+#only keep 2, set 1 as 0. >2^0.9 or <2^(-0.9)
+useampordel=function(segdata)
+{
+  for (i in 1:nrow(segdata))
+  {
+    for (j in 6:ncol(segdata))
+    {
+      if (segdata[i,j]<2)
+        segdata[i,j]=0
+    }
+  }
+  #remove high frequency regions < 2/3 #samples
+  num=apply(segdata[,6:ncol(segdata)],1,function(x){
+    sum(x>1)
+  })
+  segdata=segdata[num<2/3*(ncol(segdata)-6) & num>0,]
+  return(segdata)
+}
 library("ComplexHeatmap")
 library(circlize)
 Heatmap(ampsegdata[,6:ncol(ampsegdata)],cluster_rows = T,name="amp event",show_column_names=T,show_column_dend=T,
@@ -867,11 +900,87 @@ Heatmap(ampsegdata[,6:ncol(ampsegdata)],cluster_rows = T,name="amp event",show_c
 Heatmap(delsegdata[,6:ncol(delsegdata)],cluster_rows = T,name="del event",show_column_names=T,show_column_dend=T,
         rect_gp = gpar(col = "white", lty = 1, lwd = 1),col=c("blue","orange","red"),
         column_dend_height = unit(30, "mm"),row_dend_width  = unit(30, "mm"),
-        heatmap_legend_param = list(at = c(0,1), labels = c("none", "loss")),
+        heatmap_legend_param = list(at = c(0,1,2), labels = c("none", "loss","deletion")),
+        row_names_gp = gpar(fontsize = 10)
+)
+ampsegdata1=useampordel(ampsegdata)
+Heatmap(ampsegdata1[,6:ncol(ampsegdata1)],cluster_rows = T,name="amp event",show_column_names=T,show_column_dend=T,
+        rect_gp = gpar(col = "white", lty = 1, lwd = 1),col=c("blue","orange","red"),
+        column_dend_height = unit(30, "mm"),row_dend_width  = unit(30, "mm"),
+        heatmap_legend_param = list(at = c(0,1), labels = c("none", "amplification")),
+        row_names_gp = gpar(fontsize = 10)
+)
+delsegdata1=useampordel(delsegdata)
+Heatmap(delsegdata1[,6:ncol(delsegdata1)],cluster_rows = T,name="del event",show_column_names=T,show_column_dend=T,
+        rect_gp = gpar(col = "white", lty = 1, lwd = 1),col=c("blue","orange","red"),
+        column_dend_height = unit(30, "mm"),row_dend_width  = unit(30, "mm"),
+        heatmap_legend_param = list(at = c(0,1), labels = c("none", "deletion")),
+        row_names_gp = gpar(fontsize = 10)
+)
+allsegdata1=rbind.data.frame(ampsegdata1,delsegdata1)
+for (i in (nrow(ampsegdata1)+1):nrow(allsegdata1))
+{
+  for (j in 6:ncol(allsegdata1))
+  {
+    if (allsegdata1[i,j]==2)
+      allsegdata1[i,j]=-2
+  }
+}
+tmp=which(rownames(allsegdata1)=="21p11.2(1)")
+rownames(allsegdata1)[tmp]="21p11.2"
+tmp=which(rownames(allsegdata1)=="21p11.2(2)")
+rownames(allsegdata1)[tmp]="21p11.2(1)"
+
+Heatmap(allsegdata1[,6:ncol(allsegdata1)],cluster_rows = T,name="Event",show_column_names=T,show_column_dend=T,
+        rect_gp = gpar(col = "white", lty = 1, lwd = 1),col=c("blue","gray88","red"),
+        column_dend_height = unit(30, "mm"),row_dend_width  = unit(30, "mm"),
+        heatmap_legend_param = list(at = c(0,2,-2), labels = c("NONE", "AMP","DEL"),title_gp = gpar(fontsize = 14),labels_gp = gpar(fontsize = 12)),
         row_names_gp = gpar(fontsize = 10)
 )
 
 
+#use 2 nature regions
+extractgisticfromregions=function(segdata,regions)
+{
+  res=data.frame(matrix(NA,nrow=nrow(regions),ncol=ncol(segdata)))
+  rownames(res)=regions$cytoband
+  colnames(res)=colnames(segdata)
+  GR_regions=GRanges(seqnames = regions$chr,ranges = IRanges(start=regions$start,end=regions$end))
+  GR_segdata=GRanges(seqnames = segdata$chr,ranges = IRanges(start=segdata$start,end=segdata$end))
+  for (i in 1:nrow(regions))
+  {
+    for (j in 1:length(GR_segdata))
+    {
+      olap=subsetByOverlaps(GR_segdata[j],GR_regions[i])
+      if (length(olap)>0)
+      {
+        print(paste0("i=",i))
+        print(j)
+        res[i,]=segdata[j,]
+      }
+    }
+  }
+  numNA=apply(res,1,function(x){
+    sum(is.na(x))
+  })
+  res=res[numNA<ncol(res),]
+  return(res)
+}
+
+ampsegdata_=extractgisticfromregions(ampsegdata,amp_regions)
+delsegdata_=extractgisticfromregions(delsegdata,del_regions)
+Heatmap(ampsegdata_[,6:ncol(ampsegdata_)],cluster_rows = T,name="amp event",show_column_names=T,show_column_dend=T,
+        rect_gp = gpar(col = "white", lty = 1, lwd = 1),col=c("blue","orange","red"),
+        column_dend_height = unit(30, "mm"),row_dend_width  = unit(30, "mm"),
+        heatmap_legend_param = list(at = c(0,1,2), labels = c("none", "gain","amplification")),
+        row_names_gp = gpar(fontsize = 10)
+)
+Heatmap(delsegdata_[,6:ncol(delsegdata)],cluster_rows = T,name="del event",show_column_names=T,show_column_dend=T,
+        rect_gp = gpar(col = "white", lty = 1, lwd = 1),col=c("blue","orange","red"),
+        column_dend_height = unit(30, "mm"),row_dend_width  = unit(30, "mm"),
+        heatmap_legend_param = list(at = c(0,1), labels = c("none", "loss")),
+        row_names_gp = gpar(fontsize = 10)
+)
 #compare two datasets with one dataset
 
 ampsegdata1d=cbind.data.frame(ampsegdata1,col=rep("red",nrow(ampsegdata1)),stringsAsFactors = FALSE)
